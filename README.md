@@ -24,69 +24,54 @@ uv sync
 
 ## Usage & Model Configuration
 
-The `JITOrchestrator` is designed to be model-agnostic. While the current implementation includes a simulation of the model's "intent" block, it is built to integrate with any LLM (e.g., Gemini, OpenAI, Claude).
+The `JITOrchestrator` is fully asynchronous and designed to be model-agnostic. It integrates with the Gemini API to perform intent detection and tool calling.
 
-### Specifying a Model
-You can pass your choice of model or a custom model wrapper to the orchestrator. For example:
+### Prerequisites
+
+1.  **API Key**: Set your Google Gemini API key in an `.env` file or environment:
+    ```bash
+    export GOOGLE_API_KEY="your-api-key"
+    ```
+
+### Basic Async Usage
 
 ```python
+import asyncio
 from jit_mcp.orchestrator import JITOrchestrator
 
-# Initialize with a specific model configuration (hypothetical)
-orchestrator = JITOrchestrator(model_name="gemini-1.5-pro")
+async def main():
+    orchestrator = JITOrchestrator(model_name="gemini-1.5-flash")
+    
+    # Run the dynamic JIT flow
+    result = await orchestrator.query("Find revenue for Nvidia and save to CSV.")
+    print(result)
 
-# You can also pass custom model handlers if implemented:
-# orchestrator = JITOrchestrator(model_handler=MyCustomModel())
-
-response = orchestrator.query("Find the latest revenue for Nvidia and save to a CSV.")
-print(response)
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-## MCP Registry Setup
+## MCP Registry & Search
 
-The registry uses **ChromaDB** for persistent storage and semantic search.
+The registry uses **ChromaDB** and supports `async` operations for non-blocking I/O.
 
-### Initializing the Registry
-By default, the registry is stored in `./mcp_registry`. You can specify a custom path:
-
-```python
-from jit_mcp.registry import MCPRegistry
-
-registry = MCPRegistry(db_path="./my_tools_db")
-```
-
-### Loading Data into the Registry
-To add tools to the registry, use the `ToolMetadata` model:
+### Loading Tools
 
 ```python
-from jit_mcp.registry import MCPRegistry, ToolMetadata
-
-registry = MCPRegistry()
+from jit_mcp.registry import ToolMetadata
 
 tool = ToolMetadata(
-    name="google_calendar",
-    description="Manage calendar events and schedules.",
-    uri="mcp://calendar-server",
-    category="Admin"
+    name="finance_tool",
+    description="Access real-time stock and revenue data.",
+    uri="mcp+stdio://path/to/server",
+    category="Financial"
 )
 
-registry.add_tool(tool)
+await orchestrator.add_tool_to_registry(tool)
 ```
 
-## JIT Orchestration Flow
+## Production Architecture
 
-JIT-MCP handles the orchestration flow through a 6-step state machine:
-
-1.  **User Initiation**: User sends a query to the agentic system.
-2.  **Tool Intent**: The LLM analyzes the query. If it identifies a need for tools, it outputs a "THOUGHT" block indicating requested capabilities (e.g., "I need a financial tool").
-3.  **Registry Search**: The system performs a search (Semantic or BM25) on the MCP Registry based on the LLM's intent.
-4.  **Candidate Review**: The system presents candidate tool summaries to the LLM for confirmation.
-5.  **Hydration**: Once confirmed, the system fetches the full JSON-RPC schemas from the respective MCP servers and injects them into the context window.
-6.  **Tool Execution**: The LLM generates tool calls; the system executes them and returns the final response.
-
-## Architecture
-
-- **MCP Registry**: Built on ChromaDB for metadata storage and search.
-- **Search Provider**: Modular implementation for hybrid search strategies (BM25 + Semantic).
-- **Dynamic Context Manager**: Manages the injection/ejection of tool schemas on the fly.
-- **Orchestrator**: The central controller managing the multi-step JIT state machine.
+- **Async Core**: Built on `anyio` and native `asyncio` for high-concurrency performance.
+- **Official SDKs**: Uses `google-generativeai` and `mcp-python-sdk`.
+- **ChromaDB Registry**: Persistent vector database for metadata-driven discovery.
+- **State Machine**: Orchestrates 6 stages: User Query -> Intent -> Search -> Candidate Review -> Hydration -> Execution.

@@ -1,6 +1,7 @@
 import chromadb
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+import anyio
 
 class ToolMetadata(BaseModel):
     name: str
@@ -17,32 +18,37 @@ class MCPRegistry:
             metadata={"hnsw:space": "cosine"}
         )
 
-    def add_tool(self, tool: ToolMetadata) -> None:
+    async def add_tool(self, tool: ToolMetadata) -> None:
         """Adds or updates a tool in the registry."""
-        self.collection.upsert(
-            ids=[tool.name],
-            metadatas=[{
-                "name": tool.name,
-                "uri": tool.uri,
-                "category": tool.category
-            }],
-            documents=[tool.description]
+        await anyio.to_thread.run_sync(
+            lambda: self.collection.upsert(
+                ids=[tool.name],
+                metadatas=[{
+                    "name": tool.name,
+                    "uri": tool.uri,
+                    "category": tool.category
+                }],
+                documents=[tool.description]
+            )
         )
 
-    def search_semantic(self, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
+    async def search_semantic(self, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
         """Performs semantic search based on tool descriptions."""
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=n_results
+        results = await anyio.to_thread.run_sync(
+            lambda: self.collection.query(
+                query_texts=[query],
+                n_results=n_results
+            )
         )
         return self._format_results(results)
 
-    def search_by_category(self, category: str) -> List[Dict[str, Any]]:
+    async def search_by_category(self, category: str) -> List[Dict[str, Any]]:
         """Filters tools by category."""
-        results = self.collection.get(
-            where={"category": category}
+        results = await anyio.to_thread.run_sync(
+            lambda: self.collection.get(
+                where={"category": category}
+            )
         )
-        # ChromaDB .get returns a slightly different format than .query
         formatted: List[Dict[str, Any]] = []
         ids = results.get("ids")
         metadatas = results.get("metadatas")
@@ -78,9 +84,13 @@ class MCPRegistry:
             formatted.append(item)
         return formatted
 
-    def get_tool_uri(self, tool_name: str) -> Optional[str]:
+    async def get_tool_uri(self, tool_name: str) -> Optional[str]:
         """Retrieves the URI for a specific tool."""
-        result = self.collection.get(ids=[tool_name])
+        result = await anyio.to_thread.run_sync(
+            lambda: self.collection.get(
+                ids=[tool_name]
+            )
+        )
         if result["metadatas"]:
             return str(result["metadatas"][0]["uri"])
         return None
